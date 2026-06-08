@@ -1,8 +1,8 @@
-# PDF Smart Comparison Translation Tool
+# ❤ PDF Smart Comparison Translation Tool
 
 ⭐ Upload PDF documents for automatic segmentation and side-by-side translation.
 
-⭐ Users can configure their own AI translation API key (OpenAI, DeepSeek, Qwen, Doubao, Google Translate, LibreTranslate, or Mock mode for testing).
+⭐ You can configure your own AI translation API key (OpenAI, DeepSeek, Qwen, Doubao, Google Translate, LibreTranslate, or Mock mode for testing).
 
 ---
 
