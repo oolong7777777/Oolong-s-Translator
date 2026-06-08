@@ -1,0 +1,2134 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF 智能对照翻译工具</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --bg: #f8fafc;
+            --surface: #ffffff;
+            --text: #1e293b;
+            --text-secondary: #64748b;
+            --border: #e2e8f0;
+            --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+            --warning: #f59e0b;
+            --error: #ef4444;
+            --success: #10b981;
+            --translating: #3b82f6;
+            --base-font-size: 0.9375rem;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+        }
+
+        .header {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 1rem 2rem;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: var(--shadow);
+        }
+
+        .header-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--primary), #a855f7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .controls {
+            display: flex;
+            gap: 0.75rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .upload-zone {
+            border: 2px dashed var(--border);
+            border-radius: 1rem;
+            padding: 3rem;
+            text-align: center;
+            background: var(--surface);
+            transition: all 0.3s ease;
+            cursor: pointer;
+            margin: 2rem auto;
+            max-width: 600px;
+        }
+
+        .upload-zone:hover {
+            border-color: var(--primary);
+            background: #f5f3ff;
+        }
+
+        .upload-zone.dragover {
+            border-color: var(--primary);
+            background: #ede9fe;
+            transform: scale(1.02);
+        }
+
+        .upload-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+
+        .upload-text {
+            font-size: 1.125rem;
+            color: var(--text);
+            margin-bottom: 0.5rem;
+        }
+
+        .upload-hint {
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .btn {
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text);
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn:hover:not(:disabled) {
+            background: var(--bg);
+            border-color: var(--primary);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: var(--primary-dark);
+        }
+
+        .btn-success {
+            background: var(--success);
+            color: white;
+            border-color: var(--success);
+        }
+
+        .btn-danger {
+            color: var(--error);
+            border-color: #fee2e2;
+        }
+
+        .main-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 0 2rem 2rem;
+            display: none;
+        }
+
+        .main-container.active {
+            display: block;
+        }
+
+        .toolbar {
+            background: var(--surface);
+            padding: 1rem;
+            border-radius: 0.75rem;
+            margin-bottom: 1.5rem;
+            border: 1px solid var(--border);
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .toolbar-section {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+            padding-right: 1rem;
+            border-right: 1px solid var(--border);
+        }
+
+        .toolbar-section:last-child {
+            border-right: none;
+            margin-left: auto;
+        }
+
+        .zoom-controls {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .view-modes {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .view-mode {
+            padding: 0.375rem 0.75rem;
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+            cursor: pointer;
+            border: 1px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .view-mode:hover {
+            background: #f1f5f9;
+        }
+
+        .view-mode.active {
+            background: #ede9fe;
+            color: var(--primary-dark);
+            border-color: var(--primary);
+        }
+
+        .translation-table.side-by-side .row,
+        .translation-table.side-by-side .table-header {
+            grid-template-columns: 1fr 1fr 100px;
+        }
+
+        .translation-table.original-only .row,
+        .translation-table.original-only .table-header {
+            grid-template-columns: 1fr 100px;
+        }
+
+        .translation-table.original-only .cell-translation,
+        .translation-table.original-only .header-translation {
+            display: none !important;
+        }
+
+        .translation-table.translation-only .row,
+        .translation-table.translation-only .table-header {
+            grid-template-columns: 1fr 100px;
+        }
+
+        .translation-table.translation-only .cell-original,
+        .translation-table.translation-only .header-original {
+            display: none !important;
+        }
+
+        .stats {
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+        }
+
+        .alert {
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
+            display: none;
+            align-items: flex-start;
+            gap: 0.75rem;
+        }
+
+        .alert.show {
+            display: flex;
+        }
+
+        .alert-warning {
+            background: #fffbeb;
+            border: 1px solid #fcd34d;
+            color: #92400e;
+        }
+
+        .alert-error {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #991b1b;
+        }
+
+        .alert-success {
+            background: #ecfdf5;
+            border: 1px solid #a7f3d0;
+            color: #065f46;
+        }
+
+        .translation-table {
+            background: var(--surface);
+            border-radius: 0.75rem;
+            border: 1px solid var(--border);
+            overflow: hidden;
+        }
+
+        .table-header {
+            display: grid;
+            background: #f8fafc;
+            border-bottom: 1px solid var(--border);
+            font-weight: 600;
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+
+        .table-header > div {
+            padding: 1rem;
+        }
+
+        .table-body {
+            max-height: calc(100vh - 350px);
+            overflow-y: auto;
+        }
+
+        .row {
+            display: grid;
+            border-bottom: 1px solid var(--border);
+            transition: background 0.2s;
+            position: relative;
+        }
+
+        .row:hover {
+            background: #f8fafc;
+        }
+
+        .row:hover .insert-btn {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .row:last-child {
+            border-bottom: none;
+        }
+
+        .cell {
+            padding: 1rem;
+            font-size: var(--base-font-size);
+            line-height: 1.7;
+            min-height: 3.5rem;
+            transition: font-size 0.2s;
+        }
+
+        /* 原文单元格 - Flex 布局，编号和内容分离 */
+        .cell-original {
+            border-right: 1px solid var(--border);
+            color: var(--text);
+            font-family: Georgia, serif;
+            white-space: pre-wrap;
+            display: flex;
+            align-items: flex-start;
+            gap: 0.75rem;
+        }
+
+        /* 编号样式 - 完全不可交互 */
+        .para-num {
+            display: inline-flex;
+            width: 24px;
+            height: 24px;
+            background: #e0e7ff;
+            color: var(--primary-dark);
+            border-radius: 50%;
+            font-size: 0.75rem;
+            font-weight: 600;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            cursor: default;
+            user-select: none;
+            -webkit-user-select: none;
+            pointer-events: none;
+        }
+
+        /* 原文内容区域 - 唯一可编辑部分 */
+        .original-text {
+            flex: 1;
+            min-height: 1.5em;
+            outline: none;
+            cursor: text;
+        }
+
+        .original-text:focus {
+            outline: none;
+        }
+
+        /* 空状态提示 */
+        .original-text:empty::before {
+            content: '输入原文...';
+            color: #94a3b8;
+            font-style: italic;
+        }
+
+        .cell-translation {
+            background: #fafafa;
+            white-space: pre-wrap;
+        }
+
+        .cell-translation[contenteditable="true"]:focus {
+            outline: 2px solid var(--primary);
+            background: white;
+        }
+
+        .cell-actions {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .action-btn {
+            width: 28px;
+            height: 28px;
+            border-radius: 0.375rem;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-secondary);
+            transition: all 0.2s;
+        }
+
+        .action-btn:hover:not(:disabled) {
+            background: var(--bg);
+            color: var(--primary);
+        }
+
+        .action-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .insert-btn {
+            position: absolute;
+            left: 50%;
+            bottom: -10px;
+            transform: translateX(-50%);
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: var(--primary);
+            color: white;
+            border: 2px solid white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.2s;
+            z-index: 10;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 0;
+            line-height: 1;
+        }
+
+        .insert-btn:hover {
+            transform: translateX(-50%) scale(1.1);
+            background: var(--primary-dark);
+        }
+
+        .loading {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255,255,255,0.9);
+            z-index: 1000;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+        }
+
+        .loading.active {
+            display: flex;
+        }
+
+        .spinner {
+            width: 48px;
+            height: 48px;
+            border: 4px solid #e0e7ff;
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal {
+            background: white;
+            border-radius: 1rem;
+            padding: 2rem;
+            max-width: 500px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 0.875rem;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+        }
+
+        .form-select, .form-input {
+            width: 100%;
+            padding: 0.5rem 0.75rem;
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+            font-size: 0.875rem;
+        }
+
+        .form-hint {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            margin-top: 0.25rem;
+        }
+
+        .api-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            font-size: 0.75rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            margin-left: 0.5rem;
+        }
+
+        .api-status.connected {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .api-status.disconnected {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .batch-progress {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: 0.75rem;
+            padding: 1rem;
+            box-shadow: var(--shadow);
+            display: none;
+            min-width: 300px;
+            z-index: 100;
+        }
+
+        .batch-progress.active {
+            display: block;
+        }
+
+        .export-menu {
+            position: relative;
+        }
+
+        .export-dropdown {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            margin-top: 0.5rem;
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+            box-shadow: var(--shadow);
+            padding: 0.5rem;
+            min-width: 160px;
+            display: none;
+            z-index: 50;
+        }
+
+        .export-dropdown.show {
+            display: block;
+        }
+
+        .export-option {
+            padding: 0.5rem 0.75rem;
+            border-radius: 0.375rem;
+            cursor: pointer;
+            font-size: 0.875rem;
+        }
+
+        .export-option:hover {
+            background: var(--bg);
+        }
+
+        @media (max-width: 768px) {
+            .table-header, .row {
+                grid-template-columns: 1fr !important;
+            }
+            .cell-original {
+                border-right: none;
+                border-bottom: 1px dashed var(--border);
+            }
+            .insert-btn {
+                display: none;
+            }
+        }
+    </style>
+<base target="_blank">
+</head>
+<body>
+    <header class="header">
+        <div class="header-content">
+            <div class="logo">
+                <span>🤖</span>
+                <span>PDF 智能对照翻译</span>
+            </div>
+            <div class="controls">
+                <button class="btn" onclick="openApiSettings()">
+                    <span>⚙️</span> API 设置
+                    <span class="api-status disconnected" id="apiStatus">未配置</span>
+                </button>
+                <button class="btn" onclick="document.getElementById('fileInput').click()">
+                    <span>📁</span> 打开新文件
+                </button>
+                <div class="export-menu">
+                    <button class="btn btn-primary" onclick="toggleExport()">
+                        <span>💾</span> 导出
+                    </button>
+                    <div class="export-dropdown" id="exportDropdown">
+                        <div class="export-option" onclick="exportJSON()">📋 导出为 JSON</div>
+                        <div class="export-option" onclick="exportMarkdown()">📝 导出为 Markdown</div>
+                        <div class="export-option" onclick="exportHTML()">🌐 导出为 HTML</div>
+                    </div>
+                </div>
+                <button class="btn btn-danger" onclick="clearAll()">
+                    <span>🗑️</span> 清空
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <div class="upload-zone" id="uploadZone">
+        <div class="upload-icon">📄</div>
+        <div class="upload-text">点击或拖拽上传 PDF 文件</div>
+        <div class="upload-hint">智能分段：自动识别标题，支持任意位置插入新段落</div>
+    </div>
+    <input type="file" id="fileInput" accept=".pdf">
+
+    <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <div class="loading-text" id="loadingText">正在解析 PDF...</div>
+        <div class="progress-bar">
+            <div class="progress-fill" id="progressFill"></div>
+        </div>
+    </div>
+
+    <div class="main-container" id="mainContainer">
+        <div class="alert alert-success" id="successAlert">
+            <span>✅</span>
+            <span id="successContent">PDF 解析完成！</span>
+        </div>
+
+        <div class="alert alert-warning" id="warningAlert">
+            <span>⚠️</span>
+            <span id="warningContent"></span>
+        </div>
+
+        <div class="alert alert-error" id="errorAlert">
+            <span>❌</span>
+            <span id="errorContent"></span>
+        </div>
+
+        <div class="toolbar">
+            <div class="toolbar-section">
+                <button class="btn btn-success" id="translateAllBtn" onclick="translateAll()" disabled>
+                    <span>🌐</span> 翻译全部
+                </button>
+                <button class="btn" onclick="addParagraphAtEnd()" title="在末尾添加段落">
+                    <span>➕</span> 新增段落
+                </button>
+            </div>
+            
+            <div class="toolbar-section zoom-controls">
+                <button class="btn" onclick="changeFontSize(-1)" title="减小字号">A-</button>
+                <span style="color: var(--text-secondary); font-size: 0.875rem; min-width: 3rem; text-align: center;" id="fontSizeDisplay">100%</span>
+                <button class="btn" onclick="changeFontSize(1)" title="增大字号">A+</button>
+            </div>
+
+            <div class="toolbar-section view-modes">
+                <div class="view-mode active" onclick="setViewMode('side-by-side', this)">左右对照</div>
+                <div class="view-mode" onclick="setViewMode('original-only', this)">仅原文</div>
+                <div class="view-mode" onclick="setViewMode('translation-only', this)">仅译文</div>
+            </div>
+
+            <div class="toolbar-section">
+                <div class="stats" id="stats">共 0 段 | 已翻译 0 段</div>
+            </div>
+        </div>
+
+        <div class="translation-table side-by-side" id="translationTable">
+            <div class="table-header">
+                <div class="header-original">原文 (Original) - 可编辑</div>
+                <div class="header-translation">译文 (Translation) - 可编辑</div>
+                <div>操作</div>
+            </div>
+            <div class="table-body" id="tableBody"></div>
+        </div>
+    </div>
+
+    <!-- API 设置弹窗 - 完整版 -->
+    <div class="modal-overlay" id="apiModal" onclick="closeApiSettings(event)">
+        <div class="modal" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <span>⚙️ 翻译 API 设置</span>
+                <button class="btn" onclick="closeApiSettings()" style="padding: 0.25rem 0.5rem;">&times;</button>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">选择翻译服务</label>
+                <select class="form-select" id="apiProvider" onchange="updateApiForm()">
+                    <option value="">-- 请选择 --</option>
+                    <option value="openai">OpenAI (GPT-3.5/4)</option>
+                    <option value="deepseek">DeepSeek</option>
+                    <option value="qwen">通义千问 (Qwen)</option>
+                    <option value="doubao">豆包 (Doubao)</option>
+                    <option value="google">Google Translate</option>
+                    <option value="libre">LibreTranslate (免费)</option>
+                    <option value="mock">模拟翻译 (测试用)</option>
+                </select>
+            </div>
+
+            <div id="apiConfigForm">
+                <!-- 动态生成 -->
+            </div>
+
+            <div style="margin-top: 1.5rem; display: flex; gap: 0.5rem; justify-content: flex-end;">
+                <button class="btn" onclick="testConnection()" id="testBtn">测试连接</button>
+                <button class="btn btn-primary" onclick="saveApiSettings()">保存设置</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="batch-progress" id="batchProgress">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+            <span>正在批量翻译...</span>
+            <button class="action-btn" onclick="stopBatchTranslate()">✕</button>
+        </div>
+        <div style="height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden;">
+            <div style="height: 100%; background: var(--primary); width: 0%; transition: width 0.3s;" id="batchProgressFill"></div>
+        </div>
+        <div style="font-size: 0.875rem; color: var(--text-secondary); margin-top: 0.5rem;" id="batchProgressText">0 / 0</div>
+    </div>
+
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        let paragraphs = [];
+        let currentFontSize = 15;
+        let currentFileName = '';
+        let apiConfig = null;
+        let isBatchTranslating = false;
+        let shouldStopBatch = false;
+
+        // 完整的 API 配置模板
+        const apiTemplates = {
+            openai: `
+                <div class="form-group">
+                    <label class="form-label">API Key</label>
+                    <input type="password" class="form-input" id="apiKey" placeholder="sk-...">
+                    <div class="form-hint">在 OpenAI 控制台获取: platform.openai.com</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">模型</label>
+                    <select class="form-select" id="apiModel">
+                        <option value="gpt-3.5-turbo">GPT-3.5 Turbo (快速经济)</option>
+                        <option value="gpt-4">GPT-4 (高质量)</option>
+                        <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">目标语言</label>
+                    <select class="form-select" id="targetLang">
+                        <option value="中文">中文</option>
+                        <option value="英文">英文</option>
+                        <option value="日文">日文</option>
+                        <option value="韩文">韩文</option>
+                        <option value="法文">法文</option>
+                        <option value="德文">德文</option>
+                    </select>
+                </div>
+            `,
+            deepseek: `
+                <div class="form-group">
+                    <label class="form-label">API Key</label>
+                    <input type="password" class="form-input" id="apiKey" placeholder="...">
+                    <div class="form-hint">在 DeepSeek 开放平台获取: platform.deepseek.com</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">目标语言</label>
+                    <select class="form-select" id="targetLang">
+                        <option value="中文">中文</option>
+                        <option value="英文">英文</option>
+                    </select>
+                </div>
+            `,
+            google: `
+                <div class="form-group">
+                    <label class="form-label">API Key</label>
+                    <input type="password" class="form-input" id="apiKey" placeholder="...">
+                    <div class="form-hint">Google Cloud Translation API Key</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">目标语言代码</label>
+                    <select class="form-select" id="targetLang">
+                        <option value="zh">中文 (zh)</option>
+                        <option value="en">英文 (en)</option>
+                        <option value="ja">日文 (ja)</option>
+                        <option value="ko">韩文 (ko)</option>
+                        <option value="fr">法文 (fr)</option>
+                        <option value="de">德文 (de)</option>
+                    </select>
+                </div>
+            `,
+            libre: `
+                <div class="form-group">
+                    <label class="form-label">API URL</label>
+                    <input type="text" class="form-input" id="apiUrl" value="https://libretranslate.de/translate">
+                    <div class="form-hint">可自建或使用公共实例</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">API Key (如需要)</label>
+                    <input type="password" class="form-input" id="apiKey" placeholder="可选">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">目标语言</label>
+                    <select class="form-select" id="targetLang">
+                        <option value="zh">中文</option>
+                        <option value="en">英文</option>
+                        <option value="ja">日文</option>
+                        <option value="ko">韩文</option>
+                    </select>
+                </div>
+            `,
+            qwen: `
+                <div class="form-group">
+                    <label class="form-label">API Key</label>
+                    <input type="password" class="form-input" id="apiKey" placeholder="sk-...">
+                    <div class="form-hint">在阿里云百炼平台获取: https://bailian.console.aliyun.com</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">模型</label>
+                    <select class="form-select" id="apiModel">
+                        <option value="qwen-plus">qwen-plus (平衡)</option>
+                        <option value="qwen-max">qwen-max (高性能)</option>
+                        <option value="qwen-turbo">qwen-turbo (快速)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">目标语言</label>
+                    <select class="form-select" id="targetLang">
+                        <option value="中文">中文</option>
+                        <option value="英文">英文</option>
+                        <option value="日文">日文</option>
+                        <option value="韩文">韩文</option>
+                        <option value="法文">法文</option>
+                        <option value="德文">德文</option>
+                    </select>
+                </div>
+            `,
+            doubao: `
+                <div class="form-group">
+                    <label class="form-label">API Key</label>
+                    <input type="password" class="form-input" id="apiKey" placeholder="...">
+                    <div class="form-hint">在火山引擎方舟平台获取: https://console.volcengine.com/ark</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">模型</label>
+                    <select class="form-select" id="apiModel">
+                        <option value="doubao-pro-32k">doubao-pro-32k (专业版)</option>
+                        <option value="doubao-lite-32k">doubao-lite-32k (轻量版)</option>
+                        <option value="doubao-pro-128k">doubao-pro-128k (长文本)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">目标语言</label>
+                    <select class="form-select" id="targetLang">
+                        <option value="中文">中文</option>
+                        <option value="英文">英文</option>
+                        <option value="日文">日文</option>
+                        <option value="韩文">韩文</option>
+                        <option value="法文">法文</option>
+                        <option value="德文">德文</option>
+                    </select>
+                </div>
+            `,
+            mock: `
+                <div class="form-group">
+                    <label class="form-label">模拟延迟 (毫秒)</label>
+                    <input type="number" class="form-input" id="mockDelay" value="500">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">目标语言</label>
+                    <select class="form-select" id="targetLang">
+                        <option value="中文">中文</option>
+                        <option value="英文">英文</option>
+                    </select>
+                </div>
+                <div class="form-hint" style="color: var(--warning);">
+                    ⚠️ 模拟翻译仅用于测试界面，不会产生真实翻译结果
+                </div>
+            `
+        };
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const fileInput = document.getElementById('fileInput');
+            const uploadZone = document.getElementById('uploadZone');
+            
+            fileInput.addEventListener('change', handleFileSelect);
+            
+            uploadZone.addEventListener('click', function(e) {
+                if (e.target !== fileInput) {
+                    fileInput.click();
+                }
+            });
+            
+            uploadZone.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                this.classList.add('dragover');
+            });
+            
+            uploadZone.addEventListener('dragleave', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                this.classList.remove('dragover');
+            });
+            
+            uploadZone.addEventListener('drop', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                this.classList.remove('dragover');
+                
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    processFile(files[0]);
+                }
+            });
+
+            const backup = localStorage.getItem('pdf_translation_backup');
+            if (backup) {
+                const data = JSON.parse(backup);
+                if (confirm(`检测到未保存的翻译进度（${data.filename}），是否恢复？`)) {
+                    currentFileName = data.filename;
+                    paragraphs = data.paragraphs;
+                    document.getElementById('uploadZone').style.display = 'none';
+                    document.getElementById('mainContainer').classList.add('active');
+                    renderTable();
+                }
+            }
+
+            const saved = localStorage.getItem('pdf_translator_api');
+            if (saved) {
+                apiConfig = JSON.parse(saved);
+                updateApiStatus();
+            }
+        });
+
+        setInterval(() => {
+            if (paragraphs.length > 0) {
+                localStorage.setItem('pdf_translation_backup', JSON.stringify({
+                    filename: currentFileName,
+                    paragraphs: paragraphs,
+                    timestamp: new Date().toISOString()
+                }));
+            }
+        }, 30000);
+
+        function handleFileSelect(e) {
+            const file = e.target.files[0];
+            if (file) {
+                processFile(file);
+            }
+        }
+
+        async function processFile(file) {
+            if (file.type !== 'application/pdf' && !file.name.endsWith('.pdf')) {
+                alert('请选择 PDF 文件');
+                return;
+            }
+
+            currentFileName = file.name.replace('.pdf', '');
+            const loading = document.getElementById('loading');
+            const progressFill = document.getElementById('progressFill');
+            const loadingText = document.getElementById('loadingText');
+            
+            document.querySelectorAll('.alert').forEach(a => a.classList.remove('show'));
+            
+            loading.classList.add('active');
+            loadingText.textContent = '正在读取 PDF 文件...';
+            
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const uint8Array = new Uint8Array(arrayBuffer);
+                
+                loadingText.textContent = '正在初始化 PDF 解析器...';
+                
+                const pdf = await pdfjsLib.getDocument({ 
+                    data: uint8Array,
+                    useSystemFonts: true,
+                    cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
+                    cMapPacked: true,
+                }).promise;
+                
+                loadingText.textContent = `正在解析 ${pdf.numPages} 页内容...`;
+                
+                let allText = [];
+                
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    progressFill.style.width = ((i / pdf.numPages) * 100) + '%';
+                    loadingText.textContent = `正在解析第 ${i}/${pdf.numPages} 页...`;
+                    
+                    const page = await pdf.getPage(i);
+                    const textContent = await page.getTextContent();
+                    const viewport = page.getViewport({ scale: 1.0 });
+                    
+                    const pageText = extractPageText(textContent.items, viewport);
+                    allText.push({
+                        page: i,
+                        content: pageText
+                    });
+                }
+                
+                progressFill.style.width = '100%';
+                
+                if (allText.length === 0) {
+                    throw new Error('NO_TEXT_EXTRACTED');
+                }
+                
+                paragraphs = semanticSegmentation(allText);
+                
+                if (paragraphs.length === 0) {
+                    throw new Error('NO_VALID_PARAGRAPHS');
+                }
+                
+                renderTable();
+                showSuccess(`PDF 解析完成！共 ${paragraphs.length} 个段落`);
+                
+                document.getElementById('uploadZone').style.display = 'none';
+                document.getElementById('mainContainer').classList.add('active');
+                
+            } catch (error) {
+                console.error('PDF 处理错误:', error);
+                handleError(error);
+            } finally {
+                loading.classList.remove('active');
+                progressFill.style.width = '0%';
+            }
+        }
+
+        function extractPageText(items, viewport) {
+            if (!items || items.length === 0) return '';
+            
+            const pageHeight = viewport.height;
+            const marginTop = pageHeight * 0.08;
+            const marginBottom = pageHeight * 0.92;
+            
+            const validItems = items.filter(item => {
+                const y = item.transform[5];
+                return y > marginTop && y < marginBottom;
+            });
+            
+            if (validItems.length === 0) return '';
+            
+            validItems.sort((a, b) => {
+                const yDiff = b.transform[5] - a.transform[5];
+                if (Math.abs(yDiff) > 3) return yDiff;
+                return a.transform[4] - b.transform[4];
+            });
+            
+            let result = '';
+            let lastX = null;
+            let lastY = null;
+            let lastWidth = 0;
+            
+            validItems.forEach((item, index) => {
+                const x = item.transform[4];
+                const y = item.transform[5];
+                const text = item.str;
+                
+                if (lastY !== null && Math.abs(y - lastY) > 3) {
+                    result += '\n';
+                    lastX = null;
+                } else if (lastX !== null && index > 0) {
+                    const gap = x - (lastX + lastWidth);
+                    if (gap > 5) {
+                        result += ' ';
+                    }
+                }
+                
+                result += text;
+                lastX = x + (item.width || text.length * 6);
+                lastY = y;
+                lastWidth = item.width || text.length * 6;
+            });
+            
+            return result;
+        }
+
+        function semanticSegmentation(pageData) {
+            let fullText = pageData.map(p => p.content).join('\n\n');
+            
+            fullText = fullText
+                .replace(/\r\n/g, '\n')
+                .replace(/\r/g, '\n')
+                .replace(/-\n/g, '')
+                .replace(/\n+/g, '\n')
+                .trim();
+
+            const segments = [];
+            const lines = fullText.split('\n');
+            
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i].trim();
+                if (line.length === 0) continue;
+                
+                const isTitle = detectTitle(line, lines[i-1], lines[i+1]);
+                
+                const prevLine = i > 0 ? lines[i - 1].trim() : '';
+                const prevEndedWithSentence = /[.!?。！？…—–]\s*$/.test(prevLine);
+                const currentStartsWithUpper = /^[A-Z]/.test(line);
+                const currentStartsWithBullet = /^[\d•·\-—–]/.test(line);
+                
+                const shouldNewParagraph = segments.length === 0 || (
+                    (prevEndedWithSentence && (currentStartsWithUpper || currentStartsWithBullet)) ||
+                    isTitle
+                );
+                
+                if (shouldNewParagraph) {
+                    if (segments.length > 0) {
+                        segments[segments.length - 1].text = cleanSegment(segments[segments.length - 1].text);
+                    }
+                    segments.push({
+                        text: line,
+                        isTitle: isTitle
+                    });
+                } else {
+                    if (segments.length > 0) {
+                        const needsSpace = !/[—–\-]$/.test(segments[segments.length - 1].text) && 
+                                         !/^\s/.test(line) &&
+                                         !/^[.,;:!?。，；：！？]/.test(line);
+                        segments[segments.length - 1].text += needsSpace ? ' ' + line : line;
+                        segments[segments.length - 1].isTitle = false;
+                    }
+                }
+            }
+            
+            if (segments.length > 0) {
+                segments[segments.length - 1].text = cleanSegment(segments[segments.length - 1].text);
+            }
+            
+            return ensureSentenceIntegrity(segments);
+        }
+
+        function detectTitle(current, prev, next) {
+            const length = current.length;
+            const noEndingPunctuation = !/[.!?。！？]\s*$/.test(current);
+            const isAllCaps = current === current.toUpperCase() && current.length > 3 && /^[A-Z\s\d]+$/.test(current);
+            const isShort = length < 100;
+            const nextIsLonger = next && next.length > current.length;
+            const nextHasEnding = next && /[.!?。！？]\s*$/.test(next);
+            const isNumbered = /^\d+[\.\s]/.test(current);
+            
+            return isShort && noEndingPunctuation && (isAllCaps || isNumbered || (nextIsLonger || nextHasEnding));
+        }
+
+        function cleanSegment(text) {
+            return text
+                .replace(/\s+/g, ' ')
+                .replace(/-\s+/g, '')
+                .replace(/\s+([.,;:!?。，；：！？])/g, '$1')
+                .trim();
+        }
+
+        function ensureSentenceIntegrity(segments) {
+            const result = [];
+            
+            for (let i = 0; i < segments.length; i++) {
+                let current = segments[i].text;
+                const isTitle = segments[i].isTitle;
+                
+                if (isTitle) {
+                    result.push({
+                        id: Date.now() + result.length,
+                        original: current,
+                        translation: '',
+                        isTitle: true
+                    });
+                    continue;
+                }
+                
+                const endsWithPunctuation = /[.!?。！？…—–]\s*$/.test(current);
+                const endsWithConnector = /[,;،؛:：]\s*$/.test(current);
+                
+                if (!endsWithPunctuation && i < segments.length - 1 && !segments[i+1].isTitle) {
+                    const next = segments[i + 1].text;
+                    const nextStartsLower = /^[a-z]/.test(next);
+                    const nextStartsWithPunctuation = /^[.,;:!?。，；：！？]/.test(next);
+                    
+                    if (nextStartsLower || endsWithConnector || nextStartsWithPunctuation) {
+                        current = current + ' ' + next;
+                        i++;
+                    }
+                }
+                
+                current = cleanSegment(current);
+                
+                if (current.length > 0) {
+                    result.push({
+                        id: Date.now() + result.length,
+                        original: current,
+                        translation: '',
+                        isTitle: false
+                    });
+                }
+            }
+            
+            return result;
+        }
+
+        function handleError(error) {
+            const errorAlert = document.getElementById('errorAlert');
+            const errorContent = document.getElementById('errorContent');
+            
+            if (error.message === 'NO_TEXT_EXTRACTED') {
+                errorContent.textContent = '未能从 PDF 中提取到任何文字，文件可能损坏或加密。';
+            } else if (error.message === 'NO_VALID_PARAGRAPHS') {
+                errorContent.textContent = '未能识别到有效段落，请检查 PDF 内容。';
+            } else {
+                errorContent.textContent = '解析失败：' + (error.message || '未知错误');
+            }
+            
+            errorAlert.classList.add('show');
+        }
+
+        function showSuccess(message) {
+            const alert = document.getElementById('successAlert');
+            document.getElementById('successContent').textContent = message;
+            alert.classList.add('show');
+            setTimeout(() => alert.classList.remove('show'), 5000);
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
+            
+            paragraphs.forEach((para, index) => {
+                const row = document.createElement('div');
+                row.className = 'row';
+                
+                const insertBtn = document.createElement('button');
+                insertBtn.className = 'insert-btn';
+                insertBtn.innerHTML = '+';
+                insertBtn.title = '在此后插入新段落';
+                insertBtn.onclick = function(e) {
+                    e.stopPropagation();
+                    insertParagraph(index);
+                };
+                row.appendChild(insertBtn);
+                
+                // 原文单元格 - 使用 Flex 布局
+                const originalCell = document.createElement('div');
+                originalCell.className = 'cell cell-original';
+                // 不再区分标题样式，所有内容统一展示
+                
+                // 编号 - 纯展示，不可编辑
+                const paraNum = document.createElement('span');
+                paraNum.className = 'para-num';
+                paraNum.textContent = index + 1;
+                originalCell.appendChild(paraNum);
+                
+                // 原文内容 - 唯一可编辑区域
+                const originalText = document.createElement('div');
+                originalText.className = 'original-text';
+                originalText.contentEditable = 'true';
+                originalText.textContent = para.original || '';
+                
+                // 绑定事件
+                originalText.onblur = () => {
+                    updateOriginal(index, originalText.textContent);
+                };
+                
+                originalText.onkeydown = (e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        originalText.blur();
+                    }
+                };
+                
+                // 点击单元格时聚焦到文本区域
+                originalCell.onclick = (e) => {
+                    if (e.target !== originalText && !originalText.contains(e.target)) {
+                        originalText.focus();
+                    }
+                };
+                
+                originalCell.appendChild(originalText);
+                row.appendChild(originalCell);
+                
+                // 译文单元格
+                const transCell = document.createElement('div');
+                transCell.className = 'cell cell-translation';
+                transCell.dataset.index = index;
+                
+                if (para.translation && para.translation.trim().length > 0) {
+                    transCell.contentEditable = true;
+                    transCell.textContent = para.translation;
+                    transCell.onblur = () => updateTranslation(index, transCell.textContent);
+                } else {
+                    transCell.innerHTML = '<span style="color: #94a3b8; font-style: italic; pointer-events: none;">点击编辑或 🤖 翻译</span>';
+                    transCell.onclick = function(e) {
+                        if (!para.translation || para.translation.trim().length === 0) {
+                            transCell.contentEditable = true;
+                            transCell.textContent = '';
+                            transCell.focus();
+                            
+                            const range = document.createRange();
+                            const sel = window.getSelection();
+                            range.setStart(transCell, 0);
+                            range.collapse(true);
+                            sel.removeAllRanges();
+                            sel.addRange(range);
+                            
+                            transCell.onclick = null;
+                            transCell.onblur = () => {
+                                const text = transCell.textContent.trim();
+                                if (text.length === 0) {
+                                    transCell.contentEditable = false;
+                                    transCell.innerHTML = '<span style="color: #94a3b8; font-style: italic; pointer-events: none;">点击编辑或 🤖 翻译</span>';
+                                    transCell.onclick = arguments.callee;
+                                } else {
+                                    updateTranslation(index, text);
+                                }
+                            };
+                        }
+                    };
+                }
+                
+                row.appendChild(transCell);
+                
+                // 操作按钮
+                const actionsCell = document.createElement('div');
+                actionsCell.className = 'cell-actions';
+                actionsCell.innerHTML = `
+                    <button class="action-btn" onclick="translateParagraph(${index})" title="AI翻译" ${!apiConfig ? 'disabled' : ''}>🤖</button>
+                    <button class="action-btn" onclick="copyOriginal(${index})" title="复制原文">📋</button>
+                    <button class="action-btn" onclick="deleteRow(${index})" title="删除" style="color: var(--error);">🗑️</button>
+                `;
+                row.appendChild(actionsCell);
+                
+                tbody.appendChild(row);
+            });
+            
+            applyFontSize();
+            updateStats();
+        }
+
+        function updateOriginal(index, text) {
+            if (!text || text.trim().length === 0) {
+                renderTable();
+                return;
+            }
+            paragraphs[index].original = text.trim();
+            updateStats();
+        }
+
+        function updateTranslation(index, text) {
+            paragraphs[index].translation = text.trim();
+            updateStats();
+        }
+
+        function copyOriginal(index) {
+            navigator.clipboard.writeText(paragraphs[index].original);
+            showToast('已复制原文');
+        }
+
+        function deleteRow(index) {
+            if (confirm('确定删除这一段？')) {
+                paragraphs.splice(index, 1);
+                renderTable();
+            }
+        }
+
+        function insertParagraph(afterIndex) {
+            const newPara = {
+                id: Date.now(),
+                original: '',
+                translation: '',
+                isTitle: false
+            };
+            
+            paragraphs.splice(afterIndex + 1, 0, newPara);
+            renderTable();
+            
+            // 延迟聚焦，确保 DOM 完全渲染
+            setTimeout(() => {
+                const rows = document.querySelectorAll('.row');
+                const targetRow = rows[afterIndex + 1];
+                if (targetRow) {
+                    const originalText = targetRow.querySelector('.original-text');
+                    if (originalText) {
+                        // 聚焦并选中内容（如果有）或定位到开头
+                        originalText.focus();
+                        
+                        // 使用 Selection API 定位光标
+                        const selection = window.getSelection();
+                        const range = document.createRange();
+                        
+                        if (originalText.textContent.length === 0) {
+                            // 空内容时定位到开头
+                            range.setStart(originalText, 0);
+                            range.collapse(true);
+                        } else {
+                            // 有内容时选中所有（方便替换）或定位到末尾
+                            range.selectNodeContents(originalText);
+                            range.collapse(false); // false = 末尾, true = 开头
+                        }
+                        
+                        selection.removeAllRanges();
+                        selection.addRange(range);
+                        
+                        // 视觉反馈
+                        originalText.style.backgroundColor = '#ede9fe';
+                        setTimeout(() => {
+                            originalText.style.backgroundColor = '';
+                        }, 300);
+                    }
+                }
+            }, 50);
+        }
+
+        function addParagraphAtEnd() {
+            const newPara = {
+                id: Date.now(),
+                original: '',
+                translation: '',
+                isTitle: false
+            };
+            paragraphs.push(newPara);
+            renderTable();
+            
+            setTimeout(() => {
+                const tbody = document.getElementById('tableBody');
+                tbody.scrollTop = tbody.scrollHeight;
+                
+                const rows = document.querySelectorAll('.row');
+                const lastRow = rows[rows.length - 1];
+                if (lastRow) {
+                    const originalText = lastRow.querySelector('.original-text');
+                    if (originalText) {
+                        originalText.focus();
+                        
+                        const selection = window.getSelection();
+                        const range = document.createRange();
+                        range.setStart(originalText, 0);
+                        range.collapse(true);
+                        selection.removeAllRanges();
+                        selection.addRange(range);
+                        
+                        originalText.style.backgroundColor = '#ede9fe';
+                        setTimeout(() => {
+                            originalText.style.backgroundColor = '';
+                        }, 300);
+                    }
+                }
+            }, 50);
+        }
+
+        function changeFontSize(delta) {
+            const newSize = currentFontSize + delta * 2;
+            if (newSize < 12 || newSize > 24) return;
+            
+            currentFontSize = newSize;
+            applyFontSize();
+            updateFontSizeDisplay();
+        }
+
+        function applyFontSize() {
+            const root = document.documentElement;
+            root.style.setProperty('--base-font-size', currentFontSize + 'px');
+        }
+
+        function updateFontSizeDisplay() {
+            const percentage = Math.round((currentFontSize / 15) * 100);
+            document.getElementById('fontSizeDisplay').textContent = percentage + '%';
+        }
+
+        function updateStats() {
+            const translated = paragraphs.filter(p => p.translation && p.translation.length > 0).length;
+            document.getElementById('stats').textContent = `共 ${paragraphs.length} 段 | 已翻译 ${translated} 段`;
+        }
+
+        function setViewMode(mode, element) {
+            const table = document.getElementById('translationTable');
+            table.classList.remove('side-by-side', 'original-only', 'translation-only');
+            table.classList.add(mode);
+            
+            document.querySelectorAll('.view-mode').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            if (element) {
+                element.classList.add('active');
+            }
+        }
+
+        async function translateParagraph(index) {
+            if (!apiConfig) {
+                openApiSettings();
+                return;
+            }
+
+            const cell = document.querySelector(`[data-index="${index}"]`);
+            const originalText = paragraphs[index].original;
+            
+            if (!originalText || originalText.trim().length === 0) {
+                showToast('原文为空，无法翻译');
+                return;
+            }
+            
+            cell.innerHTML = '<span style="color: var(--translating);">翻译中...</span>';
+            
+            try {
+                const result = await doTranslate(originalText);
+                paragraphs[index].translation = result;
+                cell.textContent = result;
+                cell.contentEditable = true;
+                cell.onblur = () => updateTranslation(index, cell.textContent);
+                updateStats();
+                showToast(`第 ${index + 1} 段翻译完成`);
+            } catch (err) {
+                cell.innerHTML = `<span style="color: var(--error);">失败: ${err.message}</span>`;
+            }
+        }
+
+        async function translateAll() {
+            if (!apiConfig) {
+                openApiSettings();
+                return;
+            }
+
+            const untranslated = paragraphs.filter(p => !p.translation || p.translation.length === 0);
+            const withContent = untranslated.filter(p => p.original && p.original.trim().length > 0);
+            
+            if (withContent.length === 0) {
+                showToast('没有需要翻译的内容');
+                return;
+            }
+
+            isBatchTranslating = true;
+            shouldStopBatch = false;
+            const progress = document.getElementById('batchProgress');
+            const fill = document.getElementById('batchProgressFill');
+            const text = document.getElementById('batchProgressText');
+            
+            progress.classList.add('active');
+            
+            for (let i = 0; i < withContent.length; i++) {
+                if (shouldStopBatch) break;
+                
+                const index = paragraphs.indexOf(withContent[i]);
+                await translateParagraph(index);
+                
+                const percent = ((i + 1) / withContent.length) * 100;
+                fill.style.width = percent + '%';
+                text.textContent = `${i + 1} / ${withContent.length}`;
+                
+                if (i < withContent.length - 1) {
+                    await new Promise(r => setTimeout(r, 500));
+                }
+            }
+            
+            isBatchTranslating = false;
+            progress.classList.remove('active');
+            showToast('批量翻译完成');
+        }
+
+        function stopBatchTranslate() {
+            shouldStopBatch = true;
+        }
+
+        // ==================== API 配置功能 ====================
+
+        function openApiSettings() {
+            document.getElementById('apiModal').classList.add('active');
+            if (apiConfig) {
+                document.getElementById('apiProvider').value = apiConfig.provider;
+                updateApiForm();
+                // 填充已有值
+                setTimeout(() => {
+                    if (apiConfig.apiKey && document.getElementById('apiKey')) {
+                        document.getElementById('apiKey').value = apiConfig.apiKey;
+                    }
+                    if (apiConfig.apiUrl && document.getElementById('apiUrl')) {
+                        document.getElementById('apiUrl').value = apiConfig.apiUrl;
+                    }
+                    if (apiConfig.model && document.getElementById('apiModel')) {
+                        document.getElementById('apiModel').value = apiConfig.model;
+                    }
+                    if (apiConfig.targetLang && document.getElementById('targetLang')) {
+                        document.getElementById('targetLang').value = apiConfig.targetLang;
+                    }
+                    if (apiConfig.mockDelay && document.getElementById('mockDelay')) {
+                        document.getElementById('mockDelay').value = apiConfig.mockDelay;
+                    }
+                }, 0);
+            }
+        }
+
+        function closeApiSettings(e) {
+            if (!e || e.target.id === 'apiModal') {
+                document.getElementById('apiModal').classList.remove('active');
+            }
+        }
+
+        function updateApiForm() {
+            const provider = document.getElementById('apiProvider').value;
+            document.getElementById('apiConfigForm').innerHTML = apiTemplates[provider] || '';
+        }
+
+        async function testConnection() {
+            const provider = document.getElementById('apiProvider').value;
+            if (!provider) {
+                alert('请先选择翻译服务');
+                return;
+            }
+
+            const btn = document.getElementById('testBtn');
+            btn.disabled = true;
+            btn.textContent = '测试中...';
+
+            try {
+                // 构建测试配置
+                const testConfig = {
+                    provider: provider,
+                    targetLang: document.getElementById('targetLang')?.value || '中文'
+                };
+
+                if (document.getElementById('apiKey')) {
+                    testConfig.apiKey = document.getElementById('apiKey').value;
+                }
+                if (document.getElementById('apiUrl')) {
+                    testConfig.apiUrl = document.getElementById('apiUrl').value;
+                }
+                if (document.getElementById('apiModel')) {
+                    testConfig.model = document.getElementById('apiModel').value;
+                }
+                if (document.getElementById('mockDelay')) {
+                    testConfig.mockDelay = parseInt(document.getElementById('mockDelay').value) || 500;
+                }
+
+                // 执行测试翻译
+                const result = await doTranslate('Hello, world! This is a test.', testConfig);
+                
+                if (result && result.length > 0) {
+                    showToast('✅ 连接测试成功！返回: ' + result.substring(0, 30) + '...');
+                } else {
+                    throw new Error('返回结果为空');
+                }
+            } catch (err) {
+                alert('❌ 连接测试失败：' + err.message);
+                console.error('测试连接错误:', err);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '测试连接';
+            }
+        }
+
+        function saveApiSettings() {
+            const provider = document.getElementById('apiProvider').value;
+            if (!provider) {
+                alert('请选择翻译服务');
+                return;
+            }
+
+            apiConfig = {
+                provider: provider,
+                targetLang: document.getElementById('targetLang')?.value || '中文'
+            };
+
+            if (document.getElementById('apiKey')) {
+                apiConfig.apiKey = document.getElementById('apiKey').value;
+            }
+            if (document.getElementById('apiUrl')) {
+                apiConfig.apiUrl = document.getElementById('apiUrl').value;
+            }
+            if (document.getElementById('apiModel')) {
+                apiConfig.model = document.getElementById('apiModel').value;
+            }
+            if (document.getElementById('mockDelay')) {
+                apiConfig.mockDelay = parseInt(document.getElementById('mockDelay').value) || 500;
+            }
+
+            localStorage.setItem('pdf_translator_api', JSON.stringify(apiConfig));
+            updateApiStatus();
+            closeApiSettings();
+            showToast('API 设置已保存');
+            renderTable();
+        }
+
+        function updateApiStatus() {
+            const status = document.getElementById('apiStatus');
+            if (apiConfig) {
+                status.textContent = apiConfig.provider === 'mock' ? '测试模式' : '已配置';
+                status.className = 'api-status connected';
+                document.getElementById('translateAllBtn').disabled = false;
+            } else {
+                status.textContent = '未配置';
+                status.className = 'api-status disconnected';
+                document.getElementById('translateAllBtn').disabled = true;
+            }
+        }
+
+        // 翻译执行函数
+        async function doTranslate(text, config = apiConfig) {
+            if (!config) throw new Error('未配置 API');
+            if (!text || text.trim().length === 0) return '';
+
+            const targetLang = config.targetLang || '中文';
+
+            switch (config.provider) {
+                case 'openai':
+                    return await translateOpenAI(text, config, targetLang);
+                case 'deepseek':
+                    return await translateDeepSeek(text, config, targetLang);
+                case 'qwen':
+                    return await translateQwen(text, config, targetLang);
+                case 'doubao':
+                    return await translateDoubao(text, config, targetLang);
+                case 'google':
+                    return await translateGoogle(text, config, targetLang);
+                case 'libre':
+                    return await translateLibre(text, config, targetLang);
+                case 'mock':
+                    return await translateMock(text, config, targetLang);
+                default:
+                    throw new Error('未知的翻译服务: ' + config.provider);
+            }
+        }
+
+        async function translateOpenAI(text, config, targetLang) {
+            const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${config.apiKey}`
+                },
+                body: JSON.stringify({
+                    model: config.model || 'gpt-3.5-turbo',
+                    messages: [
+                        {
+                            role: 'system',
+                            content: `You are a professional translator. Translate the following text to ${targetLang}. Maintain the original formatting and tone. Only return the translation, no explanations.`
+                        },
+                        {
+                            role: 'user',
+                            content: text
+                        }
+                    ],
+                    temperature: 0.3
+                })
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error?.message || `OpenAI API 错误: ${response.status}`);
+            }
+
+            const data = await response.json();
+            return data.choices[0].message.content.trim();
+        }
+
+        async function translateDeepSeek(text, config, targetLang) {
+            const response = await fetch('https://api.deepseek.com/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${config.apiKey}`
+                },
+                body: JSON.stringify({
+                    model: 'deepseek-chat',
+                    messages: [
+                        {
+                            role: 'system',
+                            content: `你是一个专业翻译助手。将以下文本翻译成${targetLang}，保持原文格式和语气。只返回翻译结果，不要解释。`
+                        },
+                        {
+                            role: 'user',
+                            content: text
+                        }
+                    ],
+                    temperature: 0.3
+                })
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error?.message || `DeepSeek API 错误: ${response.status}`);
+            }
+
+            const data = await response.json();
+            return data.choices[0].message.content.trim();
+        }
+
+        async function translateGoogle(text, config, targetLang) {
+            const url = `https://translation.googleapis.com/language/translate/v2?key=${config.apiKey}`;
+            
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    q: text,
+                    target: targetLang,
+                    format: 'text'
+                })
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error?.message || `Google API 错误: ${response.status}`);
+            }
+
+            const data = await response.json();
+            return data.data.translations[0].translatedText;
+        }
+
+        async function translateLibre(text, config, targetLang) {
+            const url = config.apiUrl || 'https://libretranslate.de/translate';
+            
+            const body = {
+                q: text,
+                source: 'auto',
+                target: targetLang,
+                format: 'text'
+            };
+
+            if (config.apiKey) {
+                body.api_key = config.apiKey;
+            }
+
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(body)
+            });
+
+            if (!response.ok) {
+                throw new Error(`LibreTranslate 错误: ${response.status}`);
+            }
+
+            const data = await response.json();
+            return data.translatedText;
+        }
+
+        async function translateMock(text, config, targetLang) {
+            await new Promise(resolve => setTimeout(resolve, config.mockDelay || 500));
+            if (targetLang === '中文') {
+                return `[${targetLang}翻译] ${text.substring(0, 30)}...`;
+            } else {
+                return `[${targetLang} Translation] ${text.substring(0, 30)}...`;
+            }
+        }
+
+        async function translateQwen(text, config, targetLang) {
+            const response = await fetch('https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${config.apiKey}`
+                },
+                body: JSON.stringify({
+                    model: config.model || 'qwen-plus',
+                    messages: [
+                        {
+                            role: 'system',
+                            content: `你是一个专业翻译助手。将以下文本翻译成${targetLang}，保持原文格式和语气。只返回翻译结果，不要解释。`
+                        },
+                        {
+                            role: 'user',
+                            content: text
+                        }
+                    ],
+                    temperature: 0.3
+                })
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error?.message || `千问 API 错误: ${response.status}`);
+            }
+
+            const data = await response.json();
+            return data.choices[0].message.content.trim();
+        }
+
+        async function translateDoubao(text, config, targetLang) {
+            const response = await fetch('https://ark.cn-beijing.volces.com/api/v3/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${config.apiKey}`
+                },
+                body: JSON.stringify({
+                    model: config.model || 'doubao-pro-32k',
+                    messages: [
+                        {
+                            role: 'system',
+                            content: `你是一个专业翻译助手。将以下文本翻译成${targetLang}，保持原文格式和语气。只返回翻译结果，不要解释。`
+                        },
+                        {
+                            role: 'user',
+                            content: text
+                        }
+                    ],
+                    temperature: 0.3
+                })
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error?.message || `豆包 API 错误: ${response.status}`);
+            }
+
+            const data = await response.json();
+            return data.choices[0].message.content.trim();
+        }
+
+        // ==================== 导出功能 ====================
+        
+        // HTML 转义函数 - 防止 XSS 和格式错误
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function toggleExport() {
+            document.getElementById('exportDropdown').classList.add('show');
+        }
+
+        function exportJSON() {
+            const data = {
+                filename: currentFileName,
+                date: new Date().toISOString(),
+                paragraphs: paragraphs
+            };
+            downloadFile(JSON.stringify(data, null, 2), `${currentFileName || 'translation'}.json`, 'application/json');
+            showToast('已导出 JSON');
+        }
+
+        function exportMarkdown() {
+            let md = `# ${currentFileName || 'Translation'}\n\n`;
+            paragraphs.forEach((p, i) => {
+                md += `${p.original || ''}\n\n`;
+                md += `${p.translation || ''}\n\n`;
+                md += `---\n\n`;
+            });
+            downloadFile(md, `${currentFileName || 'translation'}.md`, 'text/markdown');
+            showToast('已导出 Markdown');
+        }
+
+        function exportHTML() {
+            const title = escapeHtml(currentFileName || 'Translation');
+            
+            let html = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${title}</title>
+    <style>
+        body {
+            font-family: Georgia, 'Times New Roman', serif;
+            max-width: 800px;
+            margin: 2rem auto;
+            padding: 0 1.5rem;
+            line-height: 1.8;
+            color: #333;
+            background: #fafafa;
+        }
+        h1 {
+            text-align: center;
+            color: #1e293b;
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 1rem;
+            margin-bottom: 2rem;
+        }
+        .paragraph {
+            margin-bottom: 2rem;
+            background: white;
+            padding: 1.5rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .original {
+            color: #1e293b;
+            margin-bottom: 1rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px dashed #e2e8f0;
+            white-space: pre-wrap;
+        }
+        .translation {
+            color: #059669;
+            white-space: pre-wrap;
+        }
+        .translation:empty::before {
+            content: '（未翻译）';
+            color: #94a3b8;
+            font-style: italic;
+        }
+        .meta {
+            text-align: center;
+            color: #94a3b8;
+            font-size: 0.875rem;
+            margin-top: 3rem;
+            padding-top: 2rem;
+            border-top: 1px solid #e2e8f0;
+        }
+    </style>
+</head>
+<body>
+    <h1>${title}</h1>`;
+            
+            paragraphs.forEach((p, i) => {
+                const original = escapeHtml(p.original || '');
+                const translation = escapeHtml(p.translation || '');
+                
+                html += `
+    <div class="paragraph">
+        <div class="original">${original}</div>
+        <div class="translation">${translation}</div>
+    </div>`;
+            });
+            
+            html += `
+    <div class="meta">
+        导出时间：${new Date().toLocaleString('zh-CN')} | 
+        共 ${paragraphs.length} 段 | 
+        已翻译 ${paragraphs.filter(p => p.translation).length} 段
+    </div>
+</body>
+</html>`;
+            
+            downloadFile(html, `${currentFileName || 'translation'}.html`, 'text/html');
+            showToast('已导出 HTML');
+        }
+
+        function downloadFile(content, filename, type) {
+            try {
+                const blob = new Blob([content], { type });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            } catch (err) {
+                console.error('导出失败:', err);
+                alert('导出失败：' + err.message);
+            }
+        }
+
+        function clearAll() {
+            if (confirm('确定清空所有内容？')) {
+                paragraphs = [];
+                document.getElementById('mainContainer').classList.remove('active');
+                document.getElementById('uploadZone').style.display = 'block';
+                document.getElementById('fileInput').value = '';
+                document.querySelectorAll('.alert').forEach(a => a.classList.remove('show'));
+            }
+        }
+
+        function showToast(msg) {
+            const toast = document.createElement('div');
+            toast.style.cssText = 'position:fixed;bottom:2rem;left:50%;transform:translateX(-50%);background:#333;color:white;padding:0.75rem 1.5rem;border-radius:0.5rem;z-index:1000;';
+            toast.textContent = msg;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 2002);
+        }
+
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.export-menu')) {
+                document.getElementById('exportDropdown').classList.remove('show');
+            }
+        });
+    </script>
+</body>
+</html>
